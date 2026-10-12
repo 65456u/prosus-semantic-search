@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>相关性标注</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a66; --line:#e3e1dc; --accent:#b4441f; --ok:#2f7d4f; --img:#eee; color-scheme:light; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#141413; --card:#1f1f1d; --ink:#ecebe7; --muted:#a3a19b; --line:#3a3936; --ok:#5fb37f; --img:#2a2a28; color-scheme:dark; }
+  }
+  :root[data-theme="dark"] { --bg:#141413; --card:#1f1f1d; --ink:#ecebe7; --muted:#a3a19b; --line:#3a3936; --ok:#5fb37f; --img:#2a2a28; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:20px 16px 60px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  h1 { font-size:18px; margin:0; }
+  .muted { color:var(--muted); }
+  .bar { height:6px; background:var(--line); border-radius:3px; margin:10px 0 18px; overflow:hidden; }
+  .bar > div { height:100%; background:var(--ok); width:0; transition:width .2s; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:14px; }
+  .query-pt { font-size:22px; font-weight:600; }
+  .query-zh { font-size:17px; margin-top:4px; }
+  .item { display:grid; grid-template-columns:200px 1fr; gap:18px; }
+  .item img, .noimg { width:200px; height:200px; object-fit:cover; border-radius:8px; background:var(--img); }
+  .noimg { display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:13px; }
+  .pt { color:var(--muted); font-size:13px; }
+  .name { font-size:18px; font-weight:600; }
+  .grades { display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-top:14px; }
+  button { font:inherit; padding:10px 6px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); cursor:pointer; }
+  button:hover { border-color:var(--ink); }
+  button.selected { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  #theme { padding:4px 10px; font-size:13px; }
+  button small { display:block; color:inherit; opacity:.7; font-size:12px; }
+  .nav { display:flex; justify-content:space-between; margin-top:12px; }
+  details { font-size:14px; }
+  details li { margin:2px 0; }
+  kbd { border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 5px; font-size:12px; background:var(--card); }
+  @media (max-width:640px) { .item { grid-template-columns:1fr; } .item img, .noimg { width:100%; height:240px; } .grades { grid-template-columns:repeat(3, 1fr); } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>搜索结果相关性标注</h1>
+    <span><span class="muted" id="progress"></span> <button id="theme" aria-label="切换夜间模式">🌙 夜间</button></span>
+  </header>
+  <div class="bar"><div id="bar"></div></div>
+  <details class="card">
+    <summary><b>评分标准</b>（快捷键 <kbd>0</kbd>–<kbd>3</kbd>，<kbd>U</kbd> 不确定，<kbd>←</kbd>/<kbd>→</kbd> 切换）</summary>
+    <ul>
+      <li><b>3 完全符合</b>：就是用户要的那道菜；查询里指定了风格或关键细节时也要符合。</li>
+      <li><b>2 可接受替代</b>：同一道菜或同一菜系家族，但缺少查询要求的某个风格、配料或细节。</li>
+      <li><b>1 弱相关</b>：只共享主要食材、是配菜，或只是同一大类。</li>
+      <li><b>0 无关</b>：不是查询要的那种食物或商品，例如要菜却给了饮料。</li>
+      <li><b>不确定</b>：看不懂或判断不了时用，不计入统计。只按商品文字和图片判断，不要因为字面相同就给高分。</li>
+    </ul>
+  </details>
+  <section class="card" id="done" hidden><b>全部完成 ✓</b> <span class="muted" id="done-text"></span></section>
+  <section class="card" id="query"></section>
+  <section class="card" id="item"></section>
+  <div class="nav">
+    <button id="prev">← 上一个</button>
+    <button id="next">下一个 →</button>
+  </div>
+</main>
+<script>
+// Night mode: follows the system by default; the button cycles auto -> dark -> light and is remembered on this device.
+(() => {
+  const modes = ["auto", "dark", "light"], names = { auto: "🌗 自动", dark: "🌙 夜间", light: "☀️ 日间" };
+  let mode = "auto";
+  try { mode = localStorage.getItem("theme") || "auto"; } catch (error) {}
+  const apply = () => {
+    if (mode === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", mode);
+    document.getElementById("theme").textContent = names[mode];
+  };
+  document.getElementById("theme").addEventListener("click", () => {
+    mode = modes[(modes.indexOf(mode) + 1) % modes.length];
+    try { localStorage.setItem("theme", mode); } catch (error) {}
+    apply();
+  });
+  apply();
+})();
+const state = { flat: [], labels: {}, position: 0 };
+const GRADES = [[0, "0 无关", "不同的食物或商品"], [1, "1 弱相关", "共享食材或大类"], [2, "2 可接受", "同一道菜，缺细节"], [3, "3 完全符合", "就是要的"], [null, "不确定", "跳过统计"]];
+const escapeHtml = (text) => String(text ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const key = (entry) => `${entry.query.query_id}|${entry.item.document_id}`;
+
+async function load() {
+  const payload = await (await fetch("/api/tasks")).json();
+  state.labels = payload.labels;
+  if (payload.mode === "retest") document.querySelector("h1").textContent = "标注稳定性重测（盲标，不显示之前的分数）";
+  for (const query of payload.queries) for (const item of query.items) state.flat.push({ query, item });
+  const firstOpen = state.flat.findIndex((entry) => !(key(entry) in state.labels));
+  state.position = firstOpen === -1 ? 0 : firstOpen;
+  render();
+}
+
+function render() {
+  const entry = state.flat[state.position];
+  if (!entry) return;
+  const { query, item } = entry;
+  const done = state.flat.filter((e) => key(e) in state.labels).length;
+  const queryItems = state.flat.filter((e) => e.query.query_id === query.query_id);
+  const queryDone = queryItems.filter((e) => key(e) in state.labels).length;
+  document.getElementById("progress").textContent = `总进度 ${done}/${state.flat.length} · 本查询 ${queryDone}/${queryItems.length}`;
+  document.getElementById("bar").style.width = `${(100 * done / state.flat.length).toFixed(1)}%`;
+  document.getElementById("done").hidden = done < state.flat.length;
+  document.getElementById("done-text").textContent = `${state.flat.length} 个都已保存，可以关闭页面。用"上一个 / 下一个"回看或修改。`;
+  document.getElementById("query").innerHTML = `
+    <div class="muted">查询 #${query.query_id}</div>
+    <div class="query-pt">${escapeHtml(query.query)}</div>
+    <div class="query-zh">${escapeHtml(query.translation_zh)}</div>
+    <div class="muted">英文原意：${escapeHtml(query.translation_en)}</div>
+    <div class="muted">${escapeHtml(query.explanation_zh)}</div>`;
+  const image = item.image_url
+    ? `<img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.name_zh)}" onerror="this.outerHTML='<div class=noimg>图片加载失败</div>'">`
+    : `<div class="noimg">无图片</div>`;
+  const current = state.labels[key(entry)];
+  document.getElementById("item").innerHTML = `
+    <div class="item">
+      ${image}
+      <div>
+        <div class="name">${escapeHtml(item.name_zh)}</div>
+        <div class="pt">${escapeHtml(item.name)}</div>
+        ${item.description ? `<p>${escapeHtml(item.description_zh)}<br><span class="pt">${escapeHtml(item.description)}</span></p>` : ""}
+        <div class="muted">菜单分类：${escapeHtml(item.category_zh)} <span class="pt">(${escapeHtml(item.category)})</span>${item.price != null ? ` · R$ ${item.price}` : ""}</div>
+      </div>
+    </div>
+    <div class="grades">${GRADES.map(([grade, label, hint]) =>
+      `<button data-grade="${grade}" class="${key(entry) in state.labels && current === grade ? "selected" : ""}">${label}<small>${hint}</small></button>`).join("")}</div>`;
+  document.querySelectorAll("[data-grade]").forEach((button) =>
+    button.addEventListener("click", () => label(button.dataset.grade === "null" ? null : Number(button.dataset.grade))));
+}
+
+async function label(grade) {
+  const entry = state.flat[state.position];
+  const response = await fetch("/api/label", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query_id: entry.query.query_id, document_id: entry.item.document_id, grade }) });
+  if (!response.ok) { alert("保存失败，请检查本地服务。"); return; }
+  state.labels[key(entry)] = grade;
+  // Go to the next unlabelled item; when everything is labelled, stay and show the completion card.
+  for (let step = 1; step <= state.flat.length; step++) {
+    const index = (state.position + step) % state.flat.length;
+    if (!(key(state.flat[index]) in state.labels)) { state.position = index; break; }
+  }
+  render();
+}
+
+function move(step) {
+  state.position = Math.max(0, Math.min(state.flat.length - 1, state.position + step));
+  render();
+}
+
+document.getElementById("prev").addEventListener("click", () => move(-1));
+document.getElementById("next").addEventListener("click", () => move(1));
+document.addEventListener("keydown", (event) => {
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  if (["0", "1", "2", "3"].includes(event.key)) label(Number(event.key));
+  else if (event.key.toLowerCase() === "u") label(null);
+  else if (event.key === "ArrowLeft") move(-1);
+  else if (event.key === "ArrowRight") move(1);
+});
+load();
+</script>
+</body>
+</html>

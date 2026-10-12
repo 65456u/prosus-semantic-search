@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>排序标注</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a66; --line:#e3e1dc; --ok:#2f7d4f; --pick:#2a78d6; --cut:#b4441f; --img:#eee; color-scheme:light; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#141413; --card:#1f1f1d; --ink:#ecebe7; --muted:#a3a19b; --line:#3a3936; --ok:#5fb37f; --pick:#3987e5; --cut:#e07a55; --img:#2a2a28; color-scheme:dark; }
+  }
+  :root[data-theme="dark"] { --bg:#141413; --card:#1f1f1d; --ink:#ecebe7; --muted:#a3a19b; --line:#3a3936; --ok:#5fb37f; --pick:#3987e5; --cut:#e07a55; --img:#2a2a28; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:18px 16px 60px; display:grid; gap:12px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  h1 { font-size:18px; margin:0; }
+  .muted { color:var(--muted); }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; }
+  .bar > div { height:100%; background:var(--ok); width:0; transition:width .2s; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .query-pt { font-size:21px; font-weight:600; }
+  .query-zh { font-size:16px; margin-top:2px; }
+  ol { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
+  li.item { display:grid; grid-template-columns:28px auto minmax(0,1fr) auto; gap:10px; align-items:start; background:var(--card);
+    border:1px solid var(--line); border-radius:9px; padding:10px 12px; cursor:grab; }
+  li.item:focus-visible { outline:2px solid var(--pick); outline-offset:2px; }
+  li.item.dragging { opacity:.45; }
+  li.item.below { opacity:.62; }
+  .rank { font:700 15px ui-monospace, Menlo, monospace; color:var(--pick); text-align:center; padding-top:1px; }
+  li.below .rank { color:var(--muted); }
+  .thumb { width:96px; height:96px; border-radius:7px; object-fit:cover; background:var(--img); cursor:zoom-in; }
+  .thumb.empty { display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--muted); cursor:default; }
+  .lightbox { position:fixed; inset:0; background:rgba(0,0,0,.78); display:flex; align-items:center; justify-content:center; padding:24px; z-index:10; cursor:zoom-out; }
+  .lightbox img { max-width:min(92vw,720px); max-height:86vh; border-radius:10px; }
+  .nophoto .thumb { display:none; }
+  .name { font-weight:600; }
+  .pt { color:var(--muted); font-size:12px; }
+  .desc { font-size:13px; margin-top:3px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  li.open .desc { -webkit-line-clamp:unset; }
+  .moves { display:flex; flex-direction:column; gap:4px; }
+  li.divider { border:3px dashed var(--cut); color:var(--cut); border-radius:9px; padding:12px; text-align:center; font-weight:700; font-size:16px; cursor:grab;
+    background:color-mix(in srgb, var(--cut) 10%, transparent); }
+  .callout { border:2px solid var(--cut); border-radius:10px; padding:12px 16px; background:color-mix(in srgb, var(--cut) 8%, var(--card)); }
+  button { font:inherit; padding:9px 12px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); cursor:pointer; }
+  button:hover { border-color:var(--ink); }
+  button:focus-visible { outline:2px solid var(--pick); outline-offset:2px; }
+  .moves button { padding:2px 8px; font-size:12px; }
+  .primary { background:var(--ink); color:var(--bg); border-color:var(--ink); font-weight:600; }
+  .actions { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:center; }
+  .saved { color:var(--ok); font-size:13px; }
+  details { font-size:14px; }
+  label.toggle { font-size:13px; color:var(--muted); display:flex; gap:6px; align-items:center; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>排序标注</h1>
+    <span><span class="muted" id="progress"></span> <button id="theme" aria-label="切换夜间模式">🌗 自动</button></span>
+  </header>
+  <div class="bar"><div id="bar"></div></div>
+  <details class="card" open>
+    <summary><b>怎么排</b></summary>
+    <p>把下面的商品按<b>和查询的相关程度从高到低</b>排好：拖动卡片，或用卡片右侧的 ↑ ↓。再把红色虚线<b>"以下都不相关"</b>拖到第一个不满足查询的商品上方。按查询的本意判断（有的查询是从英语直译的）。顺序是随机打乱的，看不到来源。点卡片可展开完整描述。键盘：选中卡片后 Alt+↑/↓ 移动。</p>
+  </details>
+  <section class="callout" id="pass2"><b>这一轮只需要做一件事：</b>把红色的<b>"合格线"</b>拖到<b>第一个不满足查询的商品上方</b>（线上方 = 可以接受，线下方 = 不满足）。如果全部都满足，就把线留在最底部。排好后点"保存并继续"。</section>
+  <section class="card" id="done" hidden><b>全部完成 ✓</b> <span class="muted">所有查询都已保存，可以关闭页面；也可以用"上一条 / 下一条"回看修改，修改后再点保存。</span></section>
+  <section class="card" id="query"></section>
+  <label class="toggle"><input type="checkbox" id="photos"> 显示商品图片（点图片可放大）</label>
+  <div class="lightbox" id="lightbox" hidden><img id="lightbox-img" alt=""></div>
+  <ol id="list" aria-label="待排序的商品"></ol>
+  <div class="actions">
+    <button id="prev">← 上一条</button>
+    <span class="saved" id="saved"></span>
+    <span style="display:flex;gap:8px"><button id="next">下一条 →</button><button class="primary" id="save">保存并继续</button></span>
+  </div>
+</main>
+<script>
+(() => {
+  const modes = ["auto", "dark", "light"], names = { auto: "🌗 自动", dark: "🌙 夜间", light: "☀️ 日间" };
+  let mode = "auto";
+  try { mode = localStorage.getItem("theme") || "auto"; } catch (error) {}
+  const apply = () => {
+    if (mode === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", mode);
+    document.getElementById("theme").textContent = names[mode];
+  };
+  document.getElementById("theme").addEventListener("click", () => {
+    mode = modes[(modes.indexOf(mode) + 1) % modes.length];
+    try { localStorage.setItem("theme", mode); } catch (error) {}
+    apply();
+  });
+  apply();
+})();
+const CUT = "__cut__";
+const state = { tasks: [], saved: {}, orders: {}, position: 0, photos: false, dragging: null };
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+state.photos = true;  // pictures help judge dishes; the viewer can turn them off
+try { state.photos = localStorage.getItem("photos") !== "0"; } catch (error) {}
+document.getElementById("photos").checked = state.photos;
+document.getElementById("photos").addEventListener("change", (e) => {
+  state.photos = e.target.checked;
+  try { localStorage.setItem("photos", state.photos ? "1" : "0"); } catch (error) {}
+  render();
+});
+
+const task = () => state.tasks[state.position];
+function order() {
+  const t = task();
+  if (!state.orders[t.query_id]) {
+    const saved = state.saved[t.query_id];
+    state.orders[t.query_id] = saved ? [...saved.order.slice(0, saved.cut), CUT, ...saved.order.slice(saved.cut)]
+                                     : [...t.items.map((i) => i.document_id), CUT];
+  }
+  return state.orders[t.query_id];
+}
+function move(from, to) {
+  const list = order();
+  if (to < 0 || to >= list.length || from === to) return;
+  const [entry] = list.splice(from, 1);
+  list.splice(to, 0, entry);
+  document.getElementById("saved").textContent = state.saved[task().query_id] ? "已修改，记得保存" : "";
+}
+
+function render() {
+  const t = task();
+  if (!t) return;
+  const done = state.tasks.filter((x) => state.saved[x.query_id]?.reviewed).length;
+  document.getElementById("progress").textContent = `合格线已确认 ${done}/${state.tasks.length} · 第 ${state.position + 1} 条`;
+  document.getElementById("bar").style.width = `${(100 * done / state.tasks.length).toFixed(1)}%`;
+  document.getElementById("done").hidden = done < state.tasks.length;
+  document.querySelector("main").classList.toggle("nophoto", !state.photos);
+  document.getElementById("query").innerHTML = `<div class="muted">查询 #${t.query_id}</div><div class="query-pt">${esc(t.query)}</div>
+    <div class="query-zh">${esc(t.translation_zh)}</div><div class="muted">英文原意：${esc(t.translation_en)}</div><div class="muted">${esc(t.explanation_zh)}</div>`;
+  const items = Object.fromEntries(t.items.map((i) => [i.document_id, i]));
+  const list = order();
+  const cutAt = list.indexOf(CUT);
+  let rank = 0;
+  document.getElementById("list").innerHTML = list.map((id, index) => {
+    if (id === CUT) return `<li class="divider" draggable="true" data-index="${index}" tabindex="0" aria-label="合格线：线下方的商品都不满足查询">⬍ 合格线：线下方的商品都不满足查询（拖动我）</li>`;
+    const i = items[id];
+    rank += 1;
+    return `<li class="item ${index > cutAt ? "below" : ""}" draggable="true" data-index="${index}" tabindex="0">
+      <span class="rank">${rank}</span>
+      ${state.photos && i.image_url ? `<img class="thumb" src="${esc(i.image_url)}" alt="${esc(i.name)}" draggable="false" loading="lazy" onerror="this.outerHTML='<span class=&quot;thumb empty&quot;>无图片</span>'">` : `<span class="thumb empty">${state.photos ? "无图片" : ""}</span>`}
+      <div><div class="name">${esc(i.name_zh || i.name)}</div><div class="pt">${esc(i.name)} · ${esc(i.category_zh || i.category)}${i.price != null ? ` · R$ ${i.price}` : ""}</div>
+        ${i.description ? `<div class="desc">${esc(i.description_zh)} <span class="pt">${esc(i.description)}</span></div>` : ""}</div>
+      <div class="moves"><button data-move="-1" aria-label="上移">↑</button><button data-move="1" aria-label="下移">↓</button></div></li>`;
+  }).join("");
+  bind();
+}
+
+function bind() {
+  document.querySelectorAll("#list li").forEach((li) => {
+    const index = Number(li.dataset.index);
+    li.addEventListener("dragstart", (e) => { state.dragging = index; li.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; });
+    li.addEventListener("dragend", () => { state.dragging = null; render(); });
+    li.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (state.dragging === null || state.dragging === index) return;
+      const box = li.getBoundingClientRect();
+      const after = e.clientY > box.top + box.height / 2;
+      let to = after ? index + 1 : index;
+      if (state.dragging < to) to -= 1;
+      if (to !== state.dragging) { move(state.dragging, to); state.dragging = to; render(); document.querySelector(`#list li[data-index="${to}"]`)?.classList.add("dragging"); }
+    });
+    li.addEventListener("click", (e) => {
+      if (e.target.matches("img.thumb")) { openImage(e.target.src); return; }
+      const button = e.target.closest("[data-move]");
+      if (button) { move(index, index + Number(button.dataset.move)); render(); focusAt(index + Number(button.dataset.move)); return; }
+      li.classList.toggle("open");
+    });
+    li.addEventListener("keydown", (e) => {
+      if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        e.preventDefault(); const to = index + (e.key === "ArrowUp" ? -1 : 1); move(index, to); render(); focusAt(to);
+      } else if (!e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        e.preventDefault(); focusAt(index + (e.key === "ArrowUp" ? -1 : 1));
+      }
+    });
+  });
+}
+function openImage(src) {
+  document.getElementById("lightbox-img").src = src;
+  document.getElementById("lightbox").hidden = false;
+}
+document.getElementById("lightbox").addEventListener("click", () => { document.getElementById("lightbox").hidden = true; });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") document.getElementById("lightbox").hidden = true; });
+function focusAt(index) { document.querySelector(`#list li[data-index="${Math.max(0, Math.min(order().length - 1, index))}"]`)?.focus(); }
+
+async function save() {
+  const t = task(), list = order(), cut = list.indexOf(CUT);
+  const ranking = list.filter((id) => id !== CUT);
+  const response = await fetch("/api/rank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query_id: t.query_id, order: ranking, cut, reviewed: true }) });
+  if (!response.ok) { document.getElementById("saved").textContent = "保存失败：请确认本地服务还在运行，然后再点一次。"; return; }
+  state.saved[t.query_id] = { order: ranking, cut, reviewed: true };
+  const next = state.tasks.findIndex((x, i) => i !== state.position && !state.saved[x.query_id]?.reviewed);
+  if (next !== -1) state.position = next;
+  document.getElementById("saved").textContent = "";
+  render();
+  window.scrollTo({ top: 0 });
+}
+document.getElementById("save").addEventListener("click", save);
+document.getElementById("prev").addEventListener("click", () => { state.position = Math.max(0, state.position - 1); render(); });
+document.getElementById("next").addEventListener("click", () => { state.position = Math.min(state.tasks.length - 1, state.position + 1); render(); });
+
+(async () => {
+  const payload = await (await fetch("/api/tasks")).json();
+  state.tasks = payload.tasks;
+  state.saved = payload.rankings || {};
+  const first = state.tasks.findIndex((x) => !state.saved[x.query_id]?.reviewed);
+  state.position = first === -1 ? 0 : first;
+  render();
+})();
+</script>
+</body>
+</html>

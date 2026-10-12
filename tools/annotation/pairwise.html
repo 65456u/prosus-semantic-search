@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>两两对比标注</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a66; --line:#e3e1dc; --ok:#2f7d4f; --pick:#2a78d6; --img:#eee; color-scheme:light; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#141413; --card:#1f1f1d; --ink:#ecebe7; --muted:#a3a19b; --line:#3a3936; --ok:#5fb37f; --pick:#3987e5; --img:#2a2a28; color-scheme:dark; }
+  }
+  :root[data-theme="dark"] { --bg:#141413; --card:#1f1f1d; --ink:#ecebe7; --muted:#a3a19b; --line:#3a3936; --ok:#5fb37f; --pick:#3987e5; --img:#2a2a28; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:18px 16px 60px; display:grid; gap:12px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  h1 { font-size:18px; margin:0; }
+  .muted { color:var(--muted); }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; }
+  .bar > div { height:100%; background:var(--ok); width:0; transition:width .2s; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .query-pt { font-size:21px; font-weight:600; }
+  .query-zh { font-size:16px; margin-top:2px; }
+  .sides { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .side { min-width:0; }
+  .side h2 { font-size:14px; margin:0 0 8px; color:var(--muted); letter-spacing:.06em; }
+  .side.picked { outline:2px solid var(--pick); outline-offset:-1px; }
+  ol { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+  li { display:grid; grid-template-columns:22px 56px minmax(0,1fr); gap:10px; align-items:start; }
+  .rank { font:600 13px ui-monospace, Menlo, monospace; color:var(--muted); padding-top:2px; }
+  .thumb { width:56px; height:56px; border-radius:6px; object-fit:cover; background:var(--img); }
+  .name { font-weight:600; }
+  .pt { color:var(--muted); font-size:12px; }
+  .desc { font-size:14px; margin-top:4px; }
+  .items-mode li { grid-template-columns:120px minmax(0,1fr); }
+  .items-mode .rank { display:none; }
+  .items-mode .thumb { width:120px; height:120px; }
+  .items-mode.nophoto li { grid-template-columns:minmax(0,1fr); }
+  .items-mode.nophoto .thumb { display:none; }
+  .choices { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+  .duels-mode .choices { grid-template-columns:1fr 1fr 1fr 1fr; }
+  [hidden] { display:none !important; }
+  button { font:inherit; padding:11px 8px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); cursor:pointer; }
+  button:hover { border-color:var(--ink); }
+  button:focus-visible { outline:2px solid var(--pick); outline-offset:2px; }
+  button.selected { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  button small { display:block; opacity:.7; font-size:12px; }
+  .nav { display:flex; justify-content:space-between; gap:8px; }
+  details { font-size:14px; }
+  label.toggle { font-size:13px; color:var(--muted); display:flex; gap:6px; align-items:center; }
+  @media (max-width:700px) { .sides { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="title">两两对比标注（盲评）</h1>
+    <span><span class="muted" id="progress"></span> <button id="theme" aria-label="切换夜间模式">🌗 自动</button></span>
+  </header>
+  <div class="bar"><div id="bar"></div></div>
+  <details class="card">
+    <summary><b>怎么判断</b>（快捷键 <b>←</b> 左边好，<b>↓</b> 或空格 差不多，<b>→</b> 右边好，<b>Backspace</b> 上一个）</summary>
+    <p id="rubric">看两组搜索结果的前 5 个，判断<b>哪一组整体更能满足这个查询</b>。排在前面的结果更重要。按查询的本意判断（有的查询是从英语直译的）。两组都差、或者好坏相当，选"差不多"。左右顺序是随机的，看不到是哪个系统。</p>
+  </details>
+  <section class="card" id="done" hidden><b>全部完成 ✓</b> <span class="muted" id="done-text"></span></section>
+  <section class="card" id="query"></section>
+  <label class="toggle"><input type="checkbox" id="photos"> 显示商品图片</label>
+  <div class="sides">
+    <section class="card side" id="side-left"><h2>左边</h2><ol id="left"></ol></section>
+    <section class="card side" id="side-right"><h2>右边</h2><ol id="right"></ol></section>
+  </div>
+  <div class="choices">
+    <button data-choice="left">← 左边更好<small>左组整体更合适</small></button>
+    <button data-choice="tie">差不多<small>好坏相当，或都不行</small></button>
+    <button data-choice="both_bad" hidden>↓ 都不行<small>两个都不符合查询</small></button>
+    <button data-choice="right">右边更好 →<small>右组整体更合适</small></button>
+  </div>
+  <div class="nav"><button id="prev">← 上一个</button><button id="next">下一个 →</button></div>
+</main>
+<script>
+(() => {
+  const modes = ["auto", "dark", "light"], names = { auto: "🌗 自动", dark: "🌙 夜间", light: "☀️ 日间" };
+  let mode = "auto";
+  try { mode = localStorage.getItem("theme") || "auto"; } catch (error) {}
+  const apply = () => {
+    if (mode === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", mode);
+    document.getElementById("theme").textContent = names[mode];
+  };
+  document.getElementById("theme").addEventListener("click", () => {
+    mode = modes[(modes.indexOf(mode) + 1) % modes.length];
+    try { localStorage.setItem("theme", mode); } catch (error) {}
+    apply();
+  });
+  apply();
+})();
+const state = { tasks: [], labels: {}, position: 0, photos: false, mode: "lists" };
+const escapeHtml = (text) => String(text ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+try { state.photos = localStorage.getItem("photos") === "1"; } catch (error) {}
+document.getElementById("photos").checked = state.photos;
+document.getElementById("photos").addEventListener("change", (event) => {
+  state.photos = event.target.checked;
+  try { localStorage.setItem("photos", state.photos ? "1" : "0"); } catch (error) {}
+  render();
+});
+
+function itemsHtml(items) {
+  const detail = state.mode === "items";
+  return items.map((item, index) => `<li><span class="rank">${index + 1}</span>
+    ${state.photos && item.image_url ? `<img class="thumb" src="${escapeHtml(item.image_url)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<span class="thumb"></span>`}
+    <div><div class="name">${escapeHtml(item.name_zh || item.name)}</div>
+    <div class="pt">${escapeHtml(item.name)} · ${escapeHtml(item.category_zh || item.category)}${detail && item.price != null ? ` · R$ ${item.price}` : ""}</div>
+    ${detail && item.description ? `<div class="desc">${escapeHtml(item.description_zh)}</div><div class="pt">${escapeHtml(item.description)}</div>` : ""}</div></li>`).join("");
+}
+
+function render() {
+  const task = state.tasks[state.position];
+  if (!task) return;
+  document.querySelector("main").classList.toggle("nophoto", !state.photos);
+  const done = state.tasks.filter((t) => t.id in state.labels).length;
+  const round = task.round ? ` · 第 ${task.round} 轮` : "";
+  document.getElementById("progress").textContent = `进度 ${done}/${state.tasks.length} · 第 ${state.position + 1} 题${round}`;
+  document.getElementById("bar").style.width = `${(100 * done / state.tasks.length).toFixed(1)}%`;
+  document.getElementById("done").hidden = done < state.tasks.length;
+  document.getElementById("done-text").textContent = `${state.tasks.length} 题都已保存，可以关闭页面。用"上一个 / 下一个"回看或修改。`;
+  document.getElementById("query").innerHTML = `<div class="muted">查询 #${task.query_id}</div>
+    <div class="query-pt">${escapeHtml(task.query)}</div><div class="query-zh">${escapeHtml(task.translation_zh)}</div>
+    <div class="muted">英文原意：${escapeHtml(task.translation_en)}</div><div class="muted">${escapeHtml(task.explanation_zh)}</div>`;
+  document.getElementById("left").innerHTML = itemsHtml(task.left);
+  document.getElementById("right").innerHTML = itemsHtml(task.right);
+  const choice = state.labels[task.id];
+  document.querySelectorAll("[data-choice]").forEach((b) => b.classList.toggle("selected", b.dataset.choice === choice));
+  document.getElementById("side-left").classList.toggle("picked", choice === "left");
+  document.getElementById("side-right").classList.toggle("picked", choice === "right");
+}
+
+async function choose(choice) {
+  const task = state.tasks[state.position];
+  const response = await fetch("/api/label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: task.id, choice }) });
+  if (!response.ok) { document.getElementById("progress").textContent = "保存失败：请确认本地服务还在运行，然后再点一次。"; return; }
+  state.labels[task.id] = choice;
+  for (let step = 1; step <= state.tasks.length; step++) {
+    const index = (state.position + step) % state.tasks.length;
+    if (!(state.tasks[index].id in state.labels)) { state.position = index; break; }
+  }
+  render();
+  window.scrollTo({ top: 0 });
+}
+
+function move(step) {
+  state.position = Math.max(0, Math.min(state.tasks.length - 1, state.position + step));
+  render();
+}
+
+document.querySelectorAll("[data-choice]").forEach((b) => b.addEventListener("click", () => choose(b.dataset.choice)));
+document.getElementById("prev").addEventListener("click", () => move(-1));
+document.getElementById("next").addEventListener("click", () => move(1));
+document.addEventListener("keydown", (event) => {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.target.tagName === "INPUT") return;
+  if (event.key === "ArrowLeft") { event.preventDefault(); choose("left"); }
+  else if (event.key === "ArrowRight") { event.preventDefault(); choose("right"); }
+  else if (state.mode === "duels" && event.key === "ArrowUp") { event.preventDefault(); choose("tie"); }
+  else if (state.mode === "duels" && event.key === "ArrowDown") { event.preventDefault(); choose("both_bad"); }
+  else if (event.key === "ArrowDown" || event.key === " ") { event.preventDefault(); choose("tie"); }
+  else if (event.key === "Backspace") { event.preventDefault(); move(-1); }
+});
+
+(async () => {
+  const payload = await (await fetch("/api/tasks")).json();
+  state.tasks = payload.tasks;
+  state.labels = payload.labels;
+  state.mode = payload.mode || "lists";
+  if (state.mode === "duels") {
+    document.title = "商品对决";
+    document.getElementById("title").textContent = "商品对决（盲评）";
+    document.getElementById("rubric").innerHTML = "给定一个查询和两个商品，判断<b>哪个商品更符合这个查询</b>。按查询的本意判断（有的查询是从英语直译的）。"
+      + "两个都合适、难分高下选<b>↑ 差不多</b>；两个都不符合查询选<b>↓ 都不行</b>。左右顺序随机，看不到来自哪个系统。"
+      + "第 1 轮覆盖全部查询，之后的轮次补充更多对；中途停下也可以。";
+    document.querySelector("summary").innerHTML = "<b>怎么判断</b>（快捷键 <b>←</b> 左边好，<b>↑</b> 差不多·都可以，<b>↓</b> 都不行，<b>→</b> 右边好，<b>Backspace</b> 上一个）";
+    document.querySelector("main").classList.add("items-mode", "duels-mode");
+    document.querySelector('[data-choice="both_bad"]').hidden = false;
+    const tie = document.querySelector('[data-choice="tie"]');
+    tie.innerHTML = "↑ 差不多<small>两个都合适，难分高下</small>";
+    document.querySelector('[data-choice="left"] small').textContent = "左边的商品更符合";
+    document.querySelector('[data-choice="right"] small').textContent = "右边的商品更符合";
+    let saved = null;
+    try { saved = localStorage.getItem("photos"); } catch (error) {}
+    if (saved === null) { state.photos = true; document.getElementById("photos").checked = true; }
+  } else if (state.mode === "items") {
+    document.title = "商品两两对比";
+    document.getElementById("title").textContent = "商品两两对比（盲评）";
+    document.getElementById("rubric").innerHTML = "给定一个查询和两个商品，判断<b>哪个商品更符合这个查询</b>。按查询的本意判断（有的查询是从英语直译的）。两个差不多相关、或者都不相关，选\"差不多\"。左右顺序是随机的。";
+    document.querySelector("main").classList.add("items-mode");
+    document.querySelectorAll("[data-choice] small").forEach((el, i) => { el.textContent = ["左边的商品更相关", "相关程度差不多", "右边的商品更相关"][i]; });
+  }
+  const first = state.tasks.findIndex((t) => !(t.id in state.labels));
+  state.position = first === -1 ? 0 : first;
+  render();
+})();
+</script>
+</body>
+</html>

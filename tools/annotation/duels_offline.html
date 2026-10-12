@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>商品对决（离线）</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a66; --line:#e3e1dc; --ok:#2f7d4f; --pick:#2a78d6; --img:#eee; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141413; --card:#1f1f1d; --ink:#ecebe7; --muted:#a3a19b; --line:#3a3936; --ok:#5fb37f; --pick:#3987e5; --img:#2a2a28; color-scheme:dark; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; }
+  main { max-width:900px; margin:0 auto; padding:14px 16px calc(40px + env(safe-area-inset-bottom)); display:grid; gap:10px; }
+  .top { display:flex; justify-content:space-between; gap:8px; align-items:baseline; flex-wrap:wrap; }
+  .muted { color:var(--muted); font-size:13px; }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; } .bar > div { height:100%; background:var(--ok); width:0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .qpt { font-size:19px; font-weight:600; } .qzh { font-size:15px; }
+  .sides { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .item { display:grid; gap:6px; align-content:start; }
+  .item img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:8px; background:var(--img); }
+  .name { font-weight:600; } .pt { color:var(--muted); font-size:12px; overflow-wrap:anywhere; } .desc { font-size:13px; }
+  .choices { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  button { font:inherit; padding:12px 4px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
+  button.sel { background:var(--ink); color:var(--bg); } button small { display:block; font-size:11px; opacity:.7; }
+  .nav { display:flex; justify-content:space-between; gap:8px; }
+  textarea { width:100%; min-height:90px; font:13px ui-monospace, Menlo, monospace; background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px; }
+  label { font-size:13px; color:var(--muted); display:flex; gap:6px; align-items:center; }
+  [hidden] { display:none !important; }
+  @media (max-width:520px) { .sides { gap:8px; } .qpt { font-size:17px; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><b>商品对决（离线）</b><span class="muted" id="progress"></span></div>
+  <div class="bar"><div id="bar"></div></div>
+  <details class="card"><summary><b>怎么判断</b></summary>
+    <p class="muted">给定查询和两个商品，选<b>更符合查询本意</b>的那个（有的查询是英语直译）。两个都合适、难分高下选"差不多"；两个都不符合选"都不行"。左右随机，看不到系统。进度自动保存在这个浏览器里；标完把最下面的代码复制回对话。</p>
+  </details>
+  <section class="card" id="query"></section>
+  <label><input type="checkbox" id="photos" checked> 显示商品图片</label>
+  <div class="sides"><section class="card item" id="left"></section><section class="card item" id="right"></section></div>
+  <div class="choices">
+    <button data-c="L">← 左边<small>更符合</small></button>
+    <button data-c="U">差不多<small>都可以</small></button>
+    <button data-c="D">都不行<small>都不符合</small></button>
+    <button data-c="R">右边 →<small>更符合</small></button>
+  </div>
+  <div class="nav"><button id="prev">← 上一个</button><button id="next">下一个 →</button></div>
+  <section class="card"><b>结果代码</b> <span class="muted" id="count"></span>
+    <textarea id="code" readonly></textarea>
+    <div class="nav"><button id="copy">复制代码</button><span class="muted" id="copied"></span></div>
+  </section>
+</main>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById("data").textContent);
+const key = "duels-" + D.set;
+let answers = {};
+try { answers = JSON.parse(localStorage.getItem(key) || "{}"); } catch (e) {}
+let pos = D.tasks.findIndex((_, i) => !answers[i]); if (pos < 0) pos = 0;
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const item = (x, photos) => `${photos && x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : ""}
+  <div class="name">${esc(x.zh || x.n)}</div><div class="pt">${esc(x.n)} · ${esc(x.czh || x.c)}${x.p != null ? " · R$ " + x.p : ""}</div>
+  ${x.d ? `<div class="desc">${esc(x.dzh || x.d)}</div>` : ""}`;
+function code() { return D.set + ":" + D.tasks.map((_, i) => answers[i] || "-").join(""); }
+function render() {
+  const t = D.tasks[pos], photos = document.getElementById("photos").checked;
+  const done = Object.keys(answers).length;
+  document.getElementById("progress").textContent = `${done}/${D.tasks.length} · 第 ${pos + 1} 题`;
+  document.getElementById("bar").style.width = (100 * done / D.tasks.length).toFixed(1) + "%";
+  document.getElementById("query").innerHTML = `<div class="muted">查询 #${t.qid}</div><div class="qpt">${esc(t.q)}</div><div class="qzh">${esc(t.zh)}</div><div class="muted">英文原意：${esc(t.en)}</div><div class="muted">${esc(t.ex)}</div>`;
+  document.getElementById("left").innerHTML = item(t.l, photos);
+  document.getElementById("right").innerHTML = item(t.r, photos);
+  document.querySelectorAll("[data-c]").forEach((b) => b.classList.toggle("sel", answers[pos] === b.dataset.c));
+  document.getElementById("code").value = code();
+  document.getElementById("count").textContent = done === D.tasks.length ? "全部完成，复制下面的代码发回对话" : `（已标 ${done} 题；没标完也可以先发回）`;
+}
+function choose(c) {
+  answers[pos] = c;
+  try { localStorage.setItem(key, JSON.stringify(answers)); } catch (e) {}
+  for (let s = 1; s <= D.tasks.length; s++) { const i = (pos + s) % D.tasks.length; if (!answers[i]) { pos = i; break; } }
+  render(); window.scrollTo({ top: 0 });
+}
+document.querySelectorAll("[data-c]").forEach((b) => b.addEventListener("click", () => choose(b.dataset.c)));
+document.getElementById("prev").addEventListener("click", () => { pos = Math.max(0, pos - 1); render(); });
+document.getElementById("next").addEventListener("click", () => { pos = Math.min(D.tasks.length - 1, pos + 1); render(); });
+document.getElementById("photos").addEventListener("change", render);
+document.getElementById("copy").addEventListener("click", async () => {
+  const area = document.getElementById("code");
+  try { await navigator.clipboard.writeText(area.value); document.getElementById("copied").textContent = "已复制"; }
+  catch (e) { area.focus(); area.select(); document.getElementById("copied").textContent = "请长按选中后手动复制"; }
+});
+document.addEventListener("keydown", (e) => {
+  const map = { ArrowLeft: "L", ArrowRight: "R", ArrowUp: "U", ArrowDown: "D" };
+  if (map[e.key]) { e.preventDefault(); choose(map[e.key]); }
+});
+render();
+</script>
+</body>
+</html>
