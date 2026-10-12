@@ -15,7 +15,6 @@ tools/data_explorer/.screenshots/
 # Confidential assignment data and brief: data/ holds only its README in Git.
 *.csv
 *.pdf
-!docs/slides.pdf
 .DS_Store
 .env
 # Private recruiter email (names, office address, scheduling link).

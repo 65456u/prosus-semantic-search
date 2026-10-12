@@ -108,7 +108,6 @@ demo app: [app/README.md](app/README.md). The data explorer:
 - [docs/evaluation.md](docs/evaluation.md): methodology, full results, judge validation, human preferences, behavioural evaluation, limitations
 - [docs/experiments.md](docs/experiments.md): multimodal embedder, two-tower fine-tuning, search logs, generative retrieval
 - [docs/reproduce.md](docs/reproduce.md): every command
-- [docs/slides.pdf](docs/slides.pdf): the five presentation slides
 
 ## Confidentiality
 
